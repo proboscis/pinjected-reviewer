@@ -74,7 +74,7 @@ def install_hook():
         # Create the pre-commit hook script
         script_content = f"""#!/bin/sh
 # pinjected-reviewer pre-commit hook
-python -m pinjected_reviewer review
+rye run python -m pinjected_reviewer review
 """
         # Check if pre-commit already exists
         if pre_commit_path.exists():
