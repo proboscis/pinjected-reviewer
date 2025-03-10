@@ -8,6 +8,7 @@ import loguru
 from injected_utils import lzma_sqlite, async_cached
 from loguru import logger
 from pinjected import *
+from pinjected.helper_structure import MetaContext
 from pinjected_openai.openrouter.instances import StructuredLLM
 from pinjected_openai.openrouter.util import a_openrouter_chat_completion, a_openrouter_chat_completion__without_fix
 from pydantic import BaseModel
@@ -428,3 +429,4 @@ __meta_design__ = design(
         logger=loguru.logger
     )
 )
+
