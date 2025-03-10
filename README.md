@@ -17,7 +17,7 @@ A git pre-commit hook that validates code against pinjected coding style guideli
 Add the dependency to your Rye project:
 
 ```bash
-rye add "git+https://github.com/proboscis/pinjected-reviewer.git"
+rye add pinjected-reviewer --git "https://github.com/proboscis/pinjected-reviewer.git"
 ```
 
 Install the pre-commit hook:
