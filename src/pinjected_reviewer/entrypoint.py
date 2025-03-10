@@ -1,5 +1,7 @@
 import asyncio
+import importlib.resources
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Awaitable, List, Optional, Tuple, Dict
@@ -17,6 +19,59 @@ from tqdm import tqdm
 # a_openrouter_chat_completion()
 
 GatherGitDiff = Callable[[], Awaitable[str]]
+
+
+def load_review_material(filename: str) -> str:
+    """
+    Loads a review material file from various possible locations.
+    
+    This function tries multiple approaches to find and load the review material:
+    1. First tries package resources (importlib.resources)
+    2. Then tries relative to the current file
+    3. Then tries common locations like current directory
+    
+    Args:
+        filename: The name of the file to load (e.g., "how_to_use_pinjected.md")
+        
+    Returns:
+        str: The content of the file
+    """
+    # Try importlib.resources first (works when installed as a package)
+    try:
+        if sys.version_info >= (3, 9):
+            # Python 3.9+ approach
+            with importlib.resources.files('review_materials').joinpath(filename).open('r') as f:
+                return f.read()
+        else:
+            # Older Python approach
+            return importlib.resources.read_text('review_materials', filename)
+    except (ImportError, FileNotFoundError, ModuleNotFoundError, ValueError) as e:
+        logger.debug(f"Could not load review material via importlib.resources: {e}")
+    
+    # Try relative to this file
+    try:
+        guide_path = Path(__file__).parent.parent / 'review_materials' / filename
+        if guide_path.exists():
+            return guide_path.read_text()
+    except Exception as e:
+        logger.debug(f"Could not load review material from relative path: {e}")
+    
+    # Try other common locations
+    for check_path in [
+        Path.cwd() / 'review_materials' / filename,
+        Path.cwd() / 'src' / 'review_materials' / filename,
+        Path.home() / '.pinjected-reviewer' / 'review_materials' / filename
+    ]:
+        try:
+            if check_path.exists():
+                logger.debug(f"Found review material at {check_path}")
+                return check_path.read_text()
+        except Exception as e:
+            continue
+    
+    # Nothing worked, return a default message
+    logger.error(f"Could not find review material: {filename}")
+    return f"# Pinjected Guide\nNo guide found for {filename}. Please check installation."
 
 
 @dataclass
@@ -108,8 +163,7 @@ async def a_review_python_diff(
         diff: FileDiff
 ):
     assert diff.filename.name.endswith('.py'), "Not a Python file"
-    guide_path = Path(__file__).parent.parent / 'review_materials' / 'how_to_use_pinjected.md'
-    guide = guide_path.read_text()
+    guide = load_review_material('how_to_use_pinjected.md')
     prompt = f"""
 Read the following guide to understand how to use Pinjected in your code:
 {guide}
@@ -394,6 +448,12 @@ async def a_git_diff(a_system) -> str:
 async def a_test_function():
     a_review_python_diff(FileDiff(Path("test.py"), "def test():\n    pass\n"))
 
+@instance
+async def cache_root_path():
+    path = Path("~/.cache/pinjected_reviewer").expanduser()
+    path.mkdir(exist_ok=True, parents=True)
+    return path
+
 
 __meta_design__ = design(
     overrides=design(
@@ -425,7 +485,6 @@ __meta_design__ = design(
                 model="openai/gpt-4o",
             )
         ),
-        cache_root_path=Path("~/.cache/pinjected_reviewer").expanduser(),
         logger=loguru.logger
     )
 )

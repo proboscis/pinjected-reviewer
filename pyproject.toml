@@ -30,8 +30,7 @@ dev-dependencies = []
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pinjected_reviewer"]
-include = ["src/review_materials/**/*"]
+packages = ["src/pinjected_reviewer", "src/review_materials"]
 
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""
