@@ -1,5 +1,6 @@
 import asyncio
 import importlib.resources
+import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -15,6 +16,20 @@ from pinjected_openai.openrouter.instances import StructuredLLM
 from pinjected_openai.openrouter.util import a_openrouter_chat_completion, a_openrouter_chat_completion__without_fix
 from pydantic import BaseModel
 from tqdm import tqdm
+
+# Configure loguru based on environment settings
+if os.environ.get("PINJECTED_REVIEWER_QUIET") == "TRUE":
+    # Super quiet mode - only show errors
+    logger.remove()  # Remove default handler
+    logger.add(sys.stderr, level="ERROR")
+elif os.environ.get("PINJECTED_REVIEWER_DEBUG") == "TRUE":
+    # Debug mode - show everything
+    logger.remove()
+    logger.add(sys.stderr, level="DEBUG")
+else:
+    # Default mode - show warnings and above
+    logger.remove()
+    logger.add(sys.stderr, level="WARNING")
 
 # a_openrouter_chat_completion()
 
@@ -47,7 +62,7 @@ def load_review_material(filename: str) -> str:
             return importlib.resources.read_text('review_materials', filename)
     except (ImportError, FileNotFoundError, ModuleNotFoundError, ValueError) as e:
         logger.debug(f"Could not load review material via importlib.resources: {e}")
-    
+
     # Try relative to this file
     try:
         guide_path = Path(__file__).parent.parent / 'review_materials' / filename
@@ -55,7 +70,7 @@ def load_review_material(filename: str) -> str:
             return guide_path.read_text()
     except Exception as e:
         logger.debug(f"Could not load review material from relative path: {e}")
-    
+
     # Try other common locations
     for check_path in [
         Path.cwd() / 'review_materials' / filename,
@@ -68,7 +83,7 @@ def load_review_material(filename: str) -> str:
                 return check_path.read_text()
         except Exception as e:
             continue
-    
+
     # Nothing worked, return a default message
     logger.error(f"Could not find review material: {filename}")
     return f"# Pinjected Guide\nNo guide found for {filename}. Please check installation."
@@ -221,6 +236,7 @@ async def review_diff__pinjected_code_style(
     logger.info(f"Found {len(git_info.staged_files)} staged files. Reviewing diff...")
     if git_info.has_python_changes:
         python_diffs = git_info.python_diffs
+        # Always show the progress bar, it's helpful feedback
         bar = tqdm(desc="Reviewing Python changes", total=len(python_diffs))
 
         async def task(diff):
@@ -444,10 +460,6 @@ async def a_git_diff(a_system) -> str:
     return stdout
 
 
-@injected
-async def a_test_function():
-    a_review_python_diff(FileDiff(Path("test.py"), "def test():\n    pass\n"))
-
 @instance
 async def cache_root_path():
     path = Path("~/.cache/pinjected_reviewer").expanduser()
@@ -488,4 +500,3 @@ __meta_design__ = design(
         logger=loguru.logger
     )
 )
-

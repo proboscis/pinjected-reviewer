@@ -25,6 +25,9 @@ from pinjected.helper_structure import MetaContext
 from pinjected_reviewer import entrypoint
 from pinjected_reviewer.entrypoint import review_diff__pinjected_code_style, Review
 
+# We'll keep logging for the main CLI but filter noise
+# The logger in entrypoint.py already handles filtering review process logs
+
 
 async def run_review():
     """
@@ -36,15 +39,21 @@ async def run_review():
     Returns:
         bool: True if all changes are approved, False otherwise
     """
+    # Add an environment variable to suppress logs during review
+    os.environ["PINJECTED_REVIEWER_QUIET"] = "TRUE"
+    
+    # Run the review process
     mc = await MetaContext.a_gather_from_path(Path(entrypoint.__file__))
     d = await mc.a_final_design
     resolver = AsyncResolver(d)
     review: Review = await resolver.provide(review_diff__pinjected_code_style)
+    
     if review.approved:
-        logger.info("All changes approved.")
+        print("✓ All changes approved.")
         return True
     else:
-        logger.error(f"Changes not approved.\n{review.name}\nReview text:\n{review.review_text}")
+        # Always show rejection messages
+        print(f"\n❌ Changes not approved.\n\n{review.name}\n{'-' * len(review.name)}\n\n{review.review_text}", file=sys.stderr)
         return False
 
 
