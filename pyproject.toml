@@ -1,7 +1,7 @@
 [project]
 name = "pinjected-reviewer"
 version = "0.1.0"
-description = "Add your description here"
+description = "A git pre-commit hook that validates code against pinjected coding style guidelines"
 authors = [
     { name = "proboscis", email = "nameissoap@gmail.com" }
 ]
@@ -14,6 +14,9 @@ dependencies = [
 ]
 readme = "README.md"
 requires-python = ">= 3.12"
+
+[project.scripts]
+pinjected-reviewer = "pinjected_reviewer.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -28,3 +31,7 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pinjected_reviewer"]
+include = ["src/review_materials/**/*"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
