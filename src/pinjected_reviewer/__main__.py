@@ -71,10 +71,13 @@ def install_hook():
         # Ensure hooks directory exists
         hooks_dir.mkdir(exist_ok=True, parents=True)
 
+        # Get the current Python executable path
+        python_path = sys.executable
+        
         # Create the pre-commit hook script
         script_content = f"""#!/bin/sh
 # pinjected-reviewer pre-commit hook
-rye run python -m pinjected_reviewer review
+{python_path} -m pinjected_reviewer review
 """
         # Check if pre-commit already exists
         if pre_commit_path.exists():
