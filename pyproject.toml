@@ -1,6 +1,6 @@
 [project]
 name = "pinjected-reviewer"
-version = "0.2.0"
+version = "0.2.1"
 description = "A git pre-commit hook that validates code against pinjected coding style guidelines"
 authors = [
     { name = "proboscis", email = "nameissoap@gmail.com" }
