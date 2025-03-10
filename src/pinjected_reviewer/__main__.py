@@ -1,5 +1,5 @@
 """
-Main CLI module for pinjected-reviewer.
+Main CLI module for pinjected-reviewer (v0.2.1).
 
 This module provides command-line functionality for the pinjected-reviewer package:
 - review: Run the code review process on staged git changes
@@ -39,13 +39,17 @@ async def run_review():
     """
     # Completely disable all loguru logs
     logger.remove()  # Remove all handlers
-    
+
     # Import after logger.remove() to avoid unnecessary log initialization
     from pinjected import AsyncResolver
+    logger.remove()  # Remove all handlers
     from pinjected.helper_structure import MetaContext
+    logger.remove()  # Remove all handlers
     from pinjected_reviewer import entrypoint
+    logger.remove()  # Remove all handlers
     from pinjected_reviewer.entrypoint import review_diff__pinjected_code_style, Review
-    
+    logger.remove()  # Remove all handlers
+
     # Run the review process
     mc = await MetaContext.a_gather_from_path(Path(entrypoint.__file__))
     d = await mc.a_final_design
