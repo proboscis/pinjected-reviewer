@@ -51,19 +51,33 @@ rye run python -m pinjected_reviewer install
 
 Once installed, the pre-commit hook will automatically run whenever you attempt to make a git commit. If your code doesn't follow the pinjected coding style guidelines, the commit will be rejected with detailed feedback.
 
-### Manual Code Review
+### Using the CLI
 
-You can also manually run the code review without committing:
+The package installs a command-line tool that you can use directly:
 
 ```bash
-rye run python -m pinjected_reviewer review
+# Review code
+pinjected-reviewer review
+
+# Install the pre-commit hook
+pinjected-reviewer install
+
+# Uninstall the pre-commit hook
+pinjected-reviewer uninstall
 ```
 
-### Uninstalling the Hook
+### Using the Python Module
 
-To remove the pre-commit hook:
+You can also run commands through the Python module:
 
 ```bash
+# Review code
+rye run python -m pinjected_reviewer review
+
+# Install the pre-commit hook
+rye run python -m pinjected_reviewer install
+
+# Uninstall the pre-commit hook
 rye run python -m pinjected_reviewer uninstall
 ```
 
