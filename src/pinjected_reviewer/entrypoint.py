@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable, Awaitable, List, Optional, Tuple, Dict
 
 import loguru
+from injected_utils import lzma_sqlite, async_cached
 from loguru import logger
 from pinjected import *
 from pinjected_openai.openrouter.instances import StructuredLLM
@@ -395,21 +396,29 @@ async def a_test_function():
 
 __meta_design__ = design(
     overrides=design(
-        a_sllm_for_commit_review=Injected.partial(
-            a_openrouter_chat_completion,
-            model="anthropic/claude-3.7-sonnet:thinking"
+        a_sllm_for_commit_review=async_cached(lzma_sqlite(injected('cache_root_path')/'a_sllm_for_commit_review.sqlite'))(
+            Injected.partial(
+                a_openrouter_chat_completion,
+                model="anthropic/claude-3.7-sonnet:thinking"
+            )
         ),
-        a_sllm_for_approval_extraction=Injected.partial(
-            a_openrouter_chat_completion,
-            model="google/gemini-2.0-flash-001",
+        a_sllm_for_approval_extraction=async_cached(lzma_sqlite(injected('cache_root_path')/'a_sllm_for_approval_extraction.sqlite'))(
+            Injected.partial(
+                a_openrouter_chat_completion,
+                model="google/gemini-2.0-flash-001",
+            )
         ),
-        a_structured_llm_for_json_fix=Injected.partial(
-            a_openrouter_chat_completion__without_fix,
-            model="openai/gpt-4o-mini"
+        a_structured_llm_for_json_fix=async_cached(lzma_sqlite(injected('cache_root_path')/'a_structured_llm_for_json_fix.sqlite'))(
+            Injected.partial(
+                a_openrouter_chat_completion__without_fix,
+                model="openai/gpt-4o-mini"
+            )
         ),
-        a_llm_for_json_schema_example=Injected.partial(
-            a_openrouter_chat_completion__without_fix,
-            model="openai/gpt-4o",
+        a_llm_for_json_schema_example=async_cached(lzma_sqlite(injected('cache_root_path')/'a_llm_for_json_schema_example.sqlite'))(
+            Injected.partial(
+                a_openrouter_chat_completion__without_fix,
+                model="openai/gpt-4o",
+            )
         ),
         cache_root_path=Path("~/.cache/pinjected_reviewer").expanduser(),
         logger=loguru.logger
