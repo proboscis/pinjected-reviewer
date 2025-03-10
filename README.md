@@ -1,5 +1,7 @@
 # Pinjected Reviewer
 
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/proboscis/pinjected-reviewer)
+
 A git pre-commit hook that validates code against pinjected coding style guidelines.
 
 ## Features
@@ -92,6 +94,20 @@ The reviewer checks all staged Python files for pinjected coding style complianc
 - And other pinjected coding guidelines
 
 If any violations are found, the commit is rejected and detailed feedback is provided to help fix the issues.
+
+## Changelog
+
+### 0.2.0 (2025-03-11)
+- Improved command-line interface with better output formatting
+- Simplified logging for cleaner output
+- Added better error handling for missing resources
+- Enhanced file loading for better package distribution
+- Fixed package structure for proper installation
+
+### 0.1.0
+- Initial release with basic functionality
+- Git pre-commit hook support
+- Review command for validating staged changes
 
 ## License
 

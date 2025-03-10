@@ -1,12 +1,12 @@
 [project]
 name = "pinjected-reviewer"
-version = "0.1.0"
+version = "0.2.0"
 description = "A git pre-commit hook that validates code against pinjected coding style guidelines"
 authors = [
     { name = "proboscis", email = "nameissoap@gmail.com" }
 ]
 dependencies = [
-    "pinjected>=0.2.239",
+    "pinjected>=0.2.241",
     "pinjected-openai>=0.4.34",
     "tqdm>=4.67.1",
     "loguru>=0.7.3",
