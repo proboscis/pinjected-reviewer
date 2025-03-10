@@ -19,11 +19,9 @@ from pathlib import Path
 import subprocess
 
 from loguru import logger
-from pinjected import AsyncResolver
-from pinjected.helper_structure import MetaContext
 
-from pinjected_reviewer import entrypoint
-from pinjected_reviewer.entrypoint import review_diff__pinjected_code_style, Review
+
+
 
 # We'll keep logging for the main CLI but filter noise
 # The logger in entrypoint.py already handles filtering review process logs
@@ -39,15 +37,21 @@ async def run_review():
     Returns:
         bool: True if all changes are approved, False otherwise
     """
-    # Add an environment variable to suppress logs during review
-    os.environ["PINJECTED_REVIEWER_QUIET"] = "TRUE"
+    # Completely disable all loguru logs
+    logger.remove()  # Remove all handlers
+    
+    # Import after logger.remove() to avoid unnecessary log initialization
+    from pinjected import AsyncResolver
+    from pinjected.helper_structure import MetaContext
+    from pinjected_reviewer import entrypoint
+    from pinjected_reviewer.entrypoint import review_diff__pinjected_code_style, Review
     
     # Run the review process
     mc = await MetaContext.a_gather_from_path(Path(entrypoint.__file__))
     d = await mc.a_final_design
     resolver = AsyncResolver(d)
     review: Review = await resolver.provide(review_diff__pinjected_code_style)
-    
+
     if review.approved:
         print("✓ All changes approved.")
         return True
@@ -190,7 +194,8 @@ def main():
     
     args = parser.parse_args()
     
-    if args.command == "review":
+    if args.command == "review" or args.command is None:
+        # Run review command or use it as default if no command specified
         success = asyncio.run(run_review())
         if not success:
             sys.exit(1)
@@ -200,11 +205,6 @@ def main():
             sys.exit(1)
     elif args.command == "uninstall":
         success = uninstall_hook()
-        if not success:
-            sys.exit(1)
-    else:
-        # Default to review if no command specified
-        success = asyncio.run(run_review())
         if not success:
             sys.exit(1)
 

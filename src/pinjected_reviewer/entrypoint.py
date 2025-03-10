@@ -1,6 +1,5 @@
 import asyncio
 import importlib.resources
-import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -11,25 +10,10 @@ import loguru
 from injected_utils import lzma_sqlite, async_cached
 from loguru import logger
 from pinjected import *
-from pinjected.helper_structure import MetaContext
 from pinjected_openai.openrouter.instances import StructuredLLM
 from pinjected_openai.openrouter.util import a_openrouter_chat_completion, a_openrouter_chat_completion__without_fix
 from pydantic import BaseModel
 from tqdm import tqdm
-
-# Configure loguru based on environment settings
-if os.environ.get("PINJECTED_REVIEWER_QUIET") == "TRUE":
-    # Super quiet mode - only show errors
-    logger.remove()  # Remove default handler
-    logger.add(sys.stderr, level="ERROR")
-elif os.environ.get("PINJECTED_REVIEWER_DEBUG") == "TRUE":
-    # Debug mode - show everything
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
-else:
-    # Default mode - show warnings and above
-    logger.remove()
-    logger.add(sys.stderr, level="WARNING")
 
 # a_openrouter_chat_completion()
 
