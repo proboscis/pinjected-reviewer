@@ -1,5 +1,5 @@
 """
-Main CLI module for pinjected-reviewer (v0.3.0).
+Main CLI module for pinjected-reviewer (v0.3.1).
 
 This module provides command-line functionality for the pinjected-reviewer package:
 - review: Run the code review process on staged git changes
@@ -10,6 +10,9 @@ When used as a pre-commit hook, it automatically checks staged changes against
 the pinjected coding style guidelines and prevents commits that don't meet
 the standards.
 """
+
+# pinjected-reviewer: ignore
+# we dont want this file to be reviewed as ordinal pinjected code, since this is for the CLI
 
 import asyncio
 import argparse
