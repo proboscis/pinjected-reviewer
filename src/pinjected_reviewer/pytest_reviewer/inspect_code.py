@@ -2,24 +2,25 @@ import ast
 import contextlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple, Dict, Optional, Protocol
+from typing import List, Dict, Optional, Protocol
 
 from injected_utils import async_cached
-from pinjected import injected, IProxy, instance, Injected
 from loguru import logger
+from pinjected import injected, IProxy, Injected
 
 
 @contextlib.contextmanager
 def suppress_logs():
     """Context manager to temporarily suppress logging."""
     # Save current logger level
-    handler_ids = logger.configure(handlers=[{"sink": lambda _: None, "level": "ERROR"}])
+    #handler_ids = logger.configure(handlers=[{"sink": lambda _: None, "level": "ERROR"}])
     try:
         yield
     finally:
         # Restore logger configuration
-        for hid in handler_ids:
-            logger.remove(hid)
+        # for hid in handler_ids:
+        #     logger.remove(hid)
+        pass
 
 
 @dataclass
@@ -346,35 +347,63 @@ async def a_detect_misuse_of_pinjected_proxies(
 
 async def _find_misues(function_returns, get_symbol_info, tree):
     misuse = []
-
+    
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             # this args change depending on if it's @injected or @instance.
-            #logger.info(f"loop start for {node.name}")
-            function_meta,_ = get_symbol_info(node.name)
+            # logger.info(f"loop start for {node.name}")
+            function_meta, _ = get_symbol_info(node.name)
             if function_meta.is_instance:
-                #logger.warning(f"instance function detected: {node.name}")
+                # logger.warning(f"instance function detected: {node.name}")
                 args = {arg.arg for arg in node.args.args}
-                #logger.warning(f"args for instance function: {args}")
+                # logger.warning(f"args for instance function: {args}")
             elif function_meta.is_injected:
                 args = {arg.arg for arg in node.args.posonlyargs}
-                #logger.warning(f"args for injected function; {args}")
+                # logger.warning(f"args for injected function; {args}")
             else:
                 # the function is not decorated, so we can't really know what it's doing
-                #logger.warning(f"using empty args for node:{node.name}")
+                # logger.warning(f"using empty args for node:{node.name}")
                 args = set()
-            #logger.info(f"args for {node.name}: {args}")
-
-
+            # logger.info(f"args for {node.name}: {args}")
 
             # 現在の関数がIProxyを返す型かどうか
             returns_iproxy = function_returns.get(node.name, False)
-
+            
+            # Find any inner function definitions and map their scope
+            inner_functions = {}
+            for inner_node in ast.walk(node):
+                if isinstance(inner_node, (ast.FunctionDef, ast.AsyncFunctionDef)) and inner_node is not node:
+                    inner_functions[inner_node.name] = {
+                        'node': inner_node,
+                        'args': set()
+                    }
+                    # Track args for inner functions
+                    inner_functions[inner_node.name]['args'].update(arg.arg for arg in inner_node.args.args)
+                    inner_functions[inner_node.name]['args'].update(arg.arg for arg in inner_node.args.posonlyargs)
+                    inner_functions[inner_node.name]['args'].update(arg.arg for arg in inner_node.args.kwonlyargs)
+            
             # 関数内での呼び出しを追跡
             for subnode in ast.walk(node):
+                # If this is an inner function, skip checking it directly (we'll process it separately)
+                if isinstance(subnode, (ast.FunctionDef, ast.AsyncFunctionDef)) and subnode is not node:
+                    continue
+                
                 # 処理しないケース
                 if isinstance(subnode, ast.Name) and (subnode.id == node.name or subnode.id in args):
                     continue
+                
+                # Check if this name reference is inside an inner function
+                in_inner_function = False
+                for inner_name, inner_data in inner_functions.items():
+                    inner_node = inner_data['node']
+                    # Check if subnode is within the inner function's body
+                    if hasattr(subnode, 'lineno') and hasattr(inner_node, 'lineno') and hasattr(inner_node, 'end_lineno'):
+                        if inner_node.lineno <= subnode.lineno <= inner_node.end_lineno:
+                            in_inner_function = True
+                            # If the variable is used in inner function but injected in outer function,
+                            # this is a valid closure usage, not a misuse
+                            if isinstance(subnode, ast.Name) and subnode.id in args:
+                                continue
 
                 accessed_name = None
                 misuse_type = None
@@ -403,6 +432,12 @@ async def _find_misues(function_returns, get_symbol_info, tree):
 
                 # 検出されたアクセス名の処理
                 if accessed_name and misuse_type:
+                    # Check if this is a reference to an injected dependency in outer scope
+                    if accessed_name in args:
+                        # If the variable is already properly injected in the outer function,
+                        # it's not a misuse when accessed in inner functions
+                        continue
+                        
                     symbol_info, qualified_name = get_symbol_info(accessed_name)
 
                     if symbol_info and (symbol_info.is_injected or symbol_info.is_instance):
@@ -425,51 +460,24 @@ async def _find_misues(function_returns, get_symbol_info, tree):
     return misuse
 
 
-@instance
-async def dummy_config():
-    return dict()
-
-
-@injected
-async def a_misuse_of_injected():
-    print(dummy_config)  # mistake, dummy_config is IProxy object so it should be requested (not detected)
-    print(dummy_config())  # mistake, dummy_config is IProxy object so it cannot be requested (now detected)
-    from pinjected_reviewer.pytest_reviewer.coding_rule_plugin_impl import a_pytest_plugin_impl
-    print(a_pytest_plugin_impl)
-    print(a_pytest_plugin_impl())
-
-
-@instance
-async def another_misuse():
-    print(dummy_config)  # mistake, dummy_config is IProxy object so it should be requested (not detected)
-    print(dummy_config())  # mistake, dummy_config is IProxy object so it cannot be requested (now detected)
-
-
-async def yet_another_misuse():
-    print(dummy_config)  # mistake, dummy_config is IProxy object so it should be requested (not detected)
-    print(dummy_config())  # mistake, dummy_config is IProxy object so it cannot be requested (now detected)
-
-
-def correct_use() -> IProxy:
-    return dummy_config
-
-
 from pinjected import design
+import pinjected_reviewer.examples
 
 test_collect_current_file: IProxy = a_collect_symbol_metadata(
-    Path(__file__)
+    Path(pinjected_reviewer.examples.__file__)
 )
 
 test_collect_imported_file: IProxy = a_collect_imported_symbol_metadata(
-    Path(__file__)
+    Path(pinjected_reviewer.examples.__file__)
 )
 # - Symbol a_pytest_plugin_impl/inspect_code.a_pytest_plugin_impl not found in metadata.
 # That is too right, it must be coding_rule_plugin.
 test_detect_misuse: IProxy = a_detect_misuse_of_pinjected_proxies(
-    Path(__file__)
+    Path(pinjected_reviewer.examples.__file__)
 )
 import pinjected_reviewer.entrypoint
-test_detect_misuse:IProxy = a_detect_misuse_of_pinjected_proxies(
+
+test_detect_misuse: IProxy = a_detect_misuse_of_pinjected_proxies(
     Path(pinjected_reviewer.entrypoint.__file__)
 )
 
