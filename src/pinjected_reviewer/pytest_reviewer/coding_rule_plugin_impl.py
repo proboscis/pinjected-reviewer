@@ -14,7 +14,6 @@ from pinjected_reviewer.pytest_reviewer.inspect_code import DetectMisuseOfPinjec
 from pinjected_reviewer.utils import check_if_file_should_be_ignored
 
 
-
 @dataclass
 class Diagnostic:
     name: str
@@ -29,10 +28,10 @@ class Diagnostic:
 async def python_files_in_project(logger, pytest_session: pytest.Session) -> list[Path]:
     root = Path(pytest_session.config.rootpath)
     logger.info(f"pinjected_reviewer: rootpath: {root}")
-    
+
     # Find all Python files in the project directory
     all_py_files = list(root.glob('**/*.py'))
-    
+
     # Filter out files from Python libraries and virtual environments
     project_files = []
     for file_path in all_py_files:
@@ -41,9 +40,62 @@ async def python_files_in_project(logger, pytest_session: pytest.Session) -> lis
         if any(part in ['venv', '.venv', 'site-packages', '.tox', 'dist', 'build', '__pycache__'] for part in parts):
             continue
         project_files.append(file_path)
-    
+
     logger.info(f"pinjected_reviewer: found {len(project_files)} Python files in project")
     return project_files
+
+
+@instance
+async def changed_python_files_in_project(
+    logger, 
+    pytest_session: pytest.Session,
+    git_info,
+) -> list[Path]:
+    """
+    Gets only the changed Python files in the git repository (staged, unstaged, and untracked).
+    Uses the existing git_info instance for git operations.
+    
+    Args:
+        logger: Injected logger
+        pytest_session: Current pytest session
+        git_info: GitInfo instance with repository information
+        
+    Returns:
+        A list of changed Python file paths
+    """
+    root = Path(pytest_session.config.rootpath)
+    logger.info(f"pinjected_reviewer: rootpath for changed files: {root}")
+    
+    # Get all Python files that have changes using git_info
+    all_changed_files = []
+
+    # Add staged Python files
+    all_changed_files.extend([f for f in git_info.staged_files if f.name.endswith('.py')])
+
+    # Add modified (unstaged) Python files
+    all_changed_files.extend([f for f in git_info.modified_files if f.name.endswith('.py')])
+
+    # Add untracked Python files
+    all_changed_files.extend([f for f in git_info.untracked_files if f.name.endswith('.py')])
+
+    # Remove duplicates
+    all_changed_files = list(set(all_changed_files))
+
+    # Convert to absolute paths if needed
+    project_files = [root / file_path if not file_path.is_absolute() else file_path for file_path in all_changed_files]
+
+    # Filter out files from Python libraries and virtual environments
+    filtered_files = []
+    for file_path in project_files:
+        parts = file_path.parts
+        # Skip files in virtual environments or site-packages
+        if any(part in ['venv', '.venv', 'site-packages', '.tox', 'dist', 'build', '__pycache__'] for part in parts):
+            continue
+        filtered_files.append(file_path)
+
+    logger.info(f"pinjected_reviewer: found {len(filtered_files)} changed Python files")
+    return filtered_files
+        
 
 
 class FileDiagnosisProvider(Protocol):
@@ -52,7 +104,7 @@ class FileDiagnosisProvider(Protocol):
 
 
 @injected
-async def a_map_progress(async_f, items, total: int = None, desc: str = None,n_concurrent:int=None):
+async def a_map_progress(async_f, items, total: int = None, desc: str = None, n_concurrent: int = None):
     if n_concurrent is None:
         n_concurrent = 10
     sem = asyncio.Semaphore(n_concurrent)
@@ -69,6 +121,10 @@ async def a_map_progress(async_f, items, total: int = None, desc: str = None,n_c
     return res
 
 
+class PinjectedReviewFailed(Exception):
+    pass
+
+
 @injected
 async def a_pytest_plugin_impl(
         a_map_progress,
@@ -78,16 +134,21 @@ async def a_pytest_plugin_impl(
 ):
     # remove __main__.py from the list
     python_files_in_project = [f for f in python_files_in_project if not f.name == '__main__.py']
-    diagnosis:list[list[Diagnostic]] = await a_map_progress(
-        a_detect_injected_function_call_without_requesting,
+
+    async def task(item):
+        try:
+            return await a_detect_injected_function_call_without_requesting(item)
+        except Exception as e:
+            raise PinjectedReviewFailed(f'Faield to diagnose {item}') from e
+
+    diagnosis: list[list[Diagnostic]] = await a_map_progress(
+        task,
         python_files_in_project,
         total=len(python_files_in_project),
         desc="Detecting misuse of pinjected proxies",
     )
     diagnosis: list[Diagnostic] = [d for ds in diagnosis for d in ds]
     return diagnosis
-
-
 
 
 @injected
@@ -132,7 +193,7 @@ async def a_detect_injected_function_call_without_requesting(
     should_ignore = check_if_file_should_be_ignored(content, src_path)
     if should_ignore:
         return []
-        
+
     misuses = await a_detect_misuse_of_pinjected_proxies(src_path)
     results = []
     guide = pinjected_guide_md
@@ -189,7 +250,7 @@ test_a_detect_injected_function_call_without_requesting: IProxy = a_detect_injec
 )
 
 with design(
-    python_files_in_project=list(Path(__file__).parent.parent.glob('**/*.py')),
+        python_files_in_project=list(Path(__file__).parent.parent.glob('**/*.py')),
 ):
     test_a_pytest_plugin_impl: IProxy = a_pytest_plugin_impl()
 

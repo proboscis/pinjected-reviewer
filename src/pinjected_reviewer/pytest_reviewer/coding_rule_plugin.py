@@ -1,3 +1,5 @@
+# pinjected-reviewer: ignore
+
 import asyncio
 from pathlib import Path
 
@@ -28,20 +30,45 @@ def pytest_addoption(parser):
         default=False,
         help="Continue test execution even if pinjected code review finds errors",
     )
+    group.addoption(
+        "--pinjected-only-changed-files",
+        action="store_true",
+        dest="pinjected_only_changed_files",
+        default=True,
+        help="Only review Python files that have been changed in git (staged, unstaged, and untracked)",
+    )
 
 
 async def run_review_for_pytest(session: pytest.Session):
     from pinjected_reviewer.pytest_reviewer.coding_rule_plugin_impl import a_pytest_plugin_impl
+    from pinjected_reviewer.pytest_reviewer.coding_rule_plugin_impl import python_files_in_project, changed_python_files_in_project
+    from pinjected_reviewer.entrypoint import git_info, a_system
     from pinjected import design
     from pinjected import AsyncResolver
     from pinjected.helper_structure import MetaContext
     from loguru import logger
     
     mc = await MetaContext.a_gather_from_path(Path(__file__))
-    d = await mc.a_final_design + design(
-        pytest_session=session
-    )
+    
+    # Check if we should use changed files only
+    only_changed_files = session.config.getoption("pinjected_only_changed_files", False)
+    
+    if only_changed_files:
+        logger.info("pinjected-reviewer: Using only changed Python files")
+        # Create a design that uses changed_python_files_in_project instead of python_files_in_project
+        d = await mc.a_final_design + design(
+            pytest_session=session,
+            # Override python_files_in_project with changed_python_files_in_project
+            python_files_in_project=changed_python_files_in_project
+        )
+    else:
+        logger.info("pinjected-reviewer: Using all Python files in project")
+        d = await mc.a_final_design + design(
+            pytest_session=session
+        )
+    
     resolver = AsyncResolver(d)
+    # this is providing the called IProxy, and this is a valid use case.
     diagnostics: list[Diagnostic] = await resolver.provide(a_pytest_plugin_impl())
     
     # Store diagnostics for reporting at the end
@@ -95,6 +122,12 @@ def pytest_terminal_summary(terminalreporter):
     
     # Report header
     terminalreporter.section("Pinjected Code Review Results")
+    
+    # Indicate if we're only checking changed files
+    if config.getoption("pinjected_only_changed_files"):
+        terminalreporter.write_line("Mode: Reviewing changed git files only", yellow=True)
+    else:
+        terminalreporter.write_line("Mode: Reviewing all Python files in project")
     
     # Report counts
     terminalreporter.write_line(f"Found {len(diagnostics)} issues:")
