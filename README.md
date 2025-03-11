@@ -147,6 +147,11 @@ If any violations are found, the commit is rejected and detailed feedback is pro
 - Git pre-commit hook support
 - Review command for validating staged changes
 
+# TODOs
+- [ ] Only review files that are modified from current git HEAD.
+- [ ] Show prices consumed
+- [ ] Show the reviewing filenames while reviewing.
+
 ## License
 
 [Your license information here]

@@ -69,6 +69,22 @@ def generate_text(llm_model, /, prompt: str):
 ```
 これにより、先のimpl関数と等価な関数を簡潔に記述できます。
 
+#### 依存関係のない@injected関数
+依存関係がない関数も@injectedを使って表現できます。
+以下は、他の何にも依存しないが、argを呼び出しに受け取る必要がある関数をwrapしたIProxyです。
+依存関係がない場合、pythonの文法上`/`をつけることができません。従って、`/`をつけずに引数のみ記述します。
+```python
+from pinjected import injected
+# Correct
+@injected
+def simple_func(arg):
+    return arg
+# Wrong, Syntax Error
+@injected
+def simple_func(/,arg):
+    return arg
+```
+
 ### 2.3 design()関数
 
 `design()`関数は、key=value形式で依存オブジェクトやパラメータをまとめる「設計図」を作成します。`+`演算子で複数のdesignを合成できます。
@@ -598,6 +614,11 @@ def test_fetch_user_data_cache_miss(fetch_user_data):
 def test_data():
     return {"key": "value"}
 ```
+
+#### 7.4.9 標準pytestとの共存
+@injectedや@instanceを使ったプログラムのテストには@injected_pytestを推奨しますが、
+純粋な関数のテストや、既存のpytestフィクスチャを使う場合は通常のpytestを使うことを推奨します。
+
 
 ### 8.1 学習コストと開発体制への影響
 

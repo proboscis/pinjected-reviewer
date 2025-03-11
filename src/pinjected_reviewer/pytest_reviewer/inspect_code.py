@@ -6,7 +6,7 @@ from typing import List, Dict, Optional, Protocol
 
 from injected_utils import async_cached
 from loguru import logger
-from pinjected import injected, IProxy, Injected
+from pinjected import injected, IProxy, Injected, instance
 
 
 @contextlib.contextmanager
@@ -76,213 +76,213 @@ async def a_collect_imported_symbol_metadata(
         src_path: Path
 ) -> Dict[str, SymbolMetadata]:
     # Use context manager to suppress logging
-    with suppress_logs():
-        logger.debug(f"a_collect_imported_symbol_metadata が呼び出されました: {src_path}")
-        tree = await a_ast(src_path.read_text())
-        imported_metadata = {}
-        base_dir = src_path.parent
-        logger.debug(f"基準ディレクトリ: {base_dir}")
+    logger.disable('pinjected_reviewer')
+    logger.debug(f"a_collect_imported_symbol_metadata が呼び出されました: {src_path}")
+    tree = await a_ast(src_path.read_text())
+    imported_metadata = {}
+    base_dir = src_path.parent
+    logger.debug(f"基準ディレクトリ: {base_dir}")
 
-        # サードパーティパッケージと標準ライブラリのリスト（必要に応じて更新）
-        external_packages = {
-            'dataclasses', 'pathlib', 'typing', 'loguru', 'ast', 'os', 'sys',
-            'collections', 're', 'json', 'time', 'datetime', 'logging',
-            'pinjected'  # 外部パッケージとして追加
-        }
+    # サードパーティパッケージと標準ライブラリのリスト（必要に応じて更新）
+    external_packages = {
+        'dataclasses', 'pathlib', 'typing', 'loguru', 'ast', 'os', 'sys',
+        'collections', 're', 'json', 'time', 'datetime', 'logging',
+        'pinjected'  # 外部パッケージとして追加
+    }
 
-        def is_same_package_import(module_name: str, current_path: Path) -> bool:
-            """同一パッケージ内のインポートかどうかを判定"""
-            parts = current_path.parts
-            if 'src' in parts:
-                src_index = parts.index('src')
-                package_parts = parts[src_index + 1:]
-                package_path = '.'.join(package_parts[:-1])  # ファイル名を除く
-                return module_name.startswith(package_path)
-            return False
+    def is_same_package_import(module_name: str, current_path: Path) -> bool:
+        """同一パッケージ内のインポートかどうかを判定"""
+        parts = current_path.parts
+        if 'src' in parts:
+            src_index = parts.index('src')
+            package_parts = parts[src_index + 1:]
+            package_path = '.'.join(package_parts[:-1])  # ファイル名を除く
+            return module_name.startswith(package_path)
+        return False
 
-        def find_project_root(start_dir: Path) -> tuple[Path, Optional[Path]]:
-            """プロジェクトルートとsrcディレクトリを探す"""
-            logger.debug(f"プロジェクトルート検索開始: {start_dir}")
-            current = start_dir
-            src_dir = None
+    def find_project_root(start_dir: Path) -> tuple[Path, Optional[Path]]:
+        """プロジェクトルートとsrcディレクトリを探す"""
+        logger.debug(f"プロジェクトルート検索開始: {start_dir}")
+        current = start_dir
+        src_dir = None
 
-            while current != Path('/'):
-                logger.debug(f"  ディレクトリチェック中: {current}")
-                if (current / 'setup.py').exists() or (current / 'pyproject.toml').exists():
-                    logger.debug(f"  setup.py/pyproject.toml を発見: {current}")
-                    if (current / 'src').exists() and (current / 'src').is_dir():
-                        src_dir = current / 'src'
-                        logger.debug(f"  src ディレクトリを発見: {src_dir}")
-                    break
+        while current != Path('/'):
+            logger.debug(f"  ディレクトリチェック中: {current}")
+            if (current / 'setup.py').exists() or (current / 'pyproject.toml').exists():
+                logger.debug(f"  setup.py/pyproject.toml を発見: {current}")
                 if (current / 'src').exists() and (current / 'src').is_dir():
-                    logger.debug(f"  src ディレクトリを発見: {current}/src")
                     src_dir = current / 'src'
-                    break
-                current = current.parent
+                    logger.debug(f"  src ディレクトリを発見: {src_dir}")
+                break
+            if (current / 'src').exists() and (current / 'src').is_dir():
+                logger.debug(f"  src ディレクトリを発見: {current}/src")
+                src_dir = current / 'src'
+                break
+            current = current.parent
 
-            if current == Path('/'):
-                logger.debug("  プロジェクトルートが見つかりませんでした。現在のディレクトリを使用します。")
-                return start_dir, src_dir
+        if current == Path('/'):
+            logger.debug("  プロジェクトルートが見つかりませんでした。現在のディレクトリを使用します。")
+            return start_dir, src_dir
 
-            return current, src_dir
+        return current, src_dir
 
-        def module_path_calc(node: ast.ImportFrom, current_path: Path) -> Optional[Path]:
-            """モジュールの実際のファイルパスを計算する"""
+    def module_path_calc(node: ast.ImportFrom, current_path: Path) -> Optional[Path]:
+        """モジュールの実際のファイルパスを計算する"""
+        logger.debug(
+            f"module_path_calc 呼び出し: module={node.module}, level={node.level}, current_path={current_path}")
+
+        # 外部パッケージならスキップ
+        if node.module in external_packages or node.module.split('.')[0] in external_packages:
+            logger.debug(f"  外部パッケージをスキップ: {node.module}")
+            return None
+
+        if node.level == 0:  # 絶対インポート
+            logger.debug(f"  絶対インポートの処理: {node.module}")
+
+            # プロジェクトルートとsrcディレクトリを探す
+            project_root, src_dir = find_project_root(base_dir)
+            logger.debug(f"  プロジェクトルート: {project_root}")
+            logger.debug(f"  src ディレクトリ: {src_dir}")
+
+            # 同じパッケージ内のインポートか確認
+            if is_same_package_import(node.module, current_path):
+                logger.debug(f"  同一パッケージ内のインポートと判断: {node.module}")
+
+                # パッケージ名を含まないシンプルなモジュール名を取得
+                module_parts = node.module.split('.')
+                simple_module_name = module_parts[-1]
+
+                # 同じディレクトリ内のモジュールとして検索
+                simple_path = current_path.parent / f"{simple_module_name}.py"
+                logger.debug(f"  同一ディレクトリ内のモジュールを確認: {simple_path}")
+                if simple_path.exists():
+                    logger.debug(f"  同一ディレクトリ内にモジュールが見つかりました: {simple_path}")
+                    return simple_path
+
+            # モジュールパスの構築試行
+            # 可能性のあるすべてのベースディレクトリのリスト
+            base_dirs = []
+
+            # 1. 現在のディレクトリ
+            base_dirs.append(base_dir)
+
+            # 2. srcディレクトリが見つかった場合
+            if src_dir:
+                base_dirs.append(src_dir)
+
+            # 3. プロジェクトルートディレクトリ
+            if project_root != base_dir:
+                base_dirs.append(project_root)
+
+            logger.debug(f"  検索対象のベースディレクトリ: {base_dirs}")
+
+            # 各ディレクトリでパスを試す
+            for directory in base_dirs:
+                # 直接の.pyファイル
+                mod_path = directory / Path(node.module.replace('.', '/') + '.py')
+                logger.debug(f"  試行 - {directory} からのパス: {mod_path}")
+                if mod_path.exists():
+                    logger.debug(f"  成功: ファイルが存在します: {mod_path}")
+                    return mod_path
+
+                # __init__.pyファイル
+                init_path = directory / Path(node.module.replace('.', '/')) / "__init__.py"
+                logger.debug(f"  試行 - {directory} からの__init__パス: {init_path}")
+                if init_path.exists():
+                    logger.debug(f"  成功: __init__.pyファイルが存在します: {init_path}")
+                    return init_path
+
+            # より単純なアプローチでsrcディレクトリ内のパスを試行
+            if src_dir:
+                # モジュール名の最後の部分だけを使用
+                module_parts = node.module.split('.')
+                simple_name = module_parts[-1]
+
+                # プロジェクトのsrcディレクトリを再帰的に検索
+                logger.debug(f"  src内をモジュール{simple_name}で再帰的に検索")
+
+                found_paths = []
+                for path in src_dir.glob(f"**/{simple_name}.py"):
+                    found_paths.append(path)
+
+                if found_paths:
+                    logger.debug(f"  見つかったパス: {found_paths}")
+                    # 最も近いと思われるパスを返す（仮の実装）
+                    logger.debug(f"  最も近いと思われるパスを使用: {found_paths[0]}")
+                    return found_paths[0]
+
+            logger.debug(f"  絶対インポートのパス解決に失敗: {node.module}")
+            return None
+        else:  # 相対インポート
+            logger.debug(f"  相対インポートの処理: level={node.level}, module={node.module}")
+
+            # 現在のファイルの親ディレクトリから開始
+            relative_path = current_path.parent
+            logger.debug(f"  開始ディレクトリ: {relative_path}")
+
+            # レベルに合わせて上に移動
+            original_level = node.level
+            for i in range(node.level - 1):
+                prev_path = relative_path
+                relative_path = relative_path.parent
+                logger.debug(f"  レベル {i + 1}/{original_level - 1}: {prev_path} -> {relative_path}")
+
+            # モジュールが指定されている場合は追加
+            final_path = relative_path
+            if node.module:
+                module_parts = node.module.split('.')
+                for i, part in enumerate(module_parts):
+                    prev_path = final_path
+                    final_path = final_path / part
+                    logger.debug(f"  モジュール部分 {i + 1}/{len(module_parts)}を追加: {prev_path} -> {final_path}")
+
+            # モジュールファイルが存在するか確認
+            module_file = final_path.with_suffix('.py')
+            logger.debug(f"  モジュールファイルをチェック: {module_file}")
+            if module_file.exists():
+                logger.debug(f"  モジュールファイルが存在します")
+                return module_file
+
+            # パッケージの場合は__init__.pyを確認
+            init_file = final_path / '__init__.py'
+            logger.debug(f"  __init__.pyファイルをチェック: {init_file}")
+            if init_file.exists():
+                logger.debug(f"  __init__.pyファイルが存在します")
+                return init_file
+
+            logger.debug(f"  相対インポートのパス解決に失敗: level={node.level}, module={node.module}")
+            return None
+
+    # インポート文を収集
+    import_nodes = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            import_nodes.append(node)
+
+    # インポート情報のログ出力
+    logger.debug(f"ファイル {src_path} から {len(import_nodes)} 個のインポート文を検出")
+    for i, node in enumerate(import_nodes):
+        logger.debug(
+            f"インポート #{i + 1}: from {node.module} import {[name.name for name in node.names]} (level={node.level})")
+
+    # 実際の処理
+    for i, node in enumerate(import_nodes):
+        logger.debug(f"インポート #{i + 1} を処理中: {node.module} (level={node.level})")
+        module_path = module_path_calc(node, src_path)
+
+        if module_path and module_path.exists():
+            logger.debug(f"  モジュールパスが見つかりました: {module_path}")
+            logger.debug(f"  シンボルメタデータを収集中...")
+            module_metadata = await a_collect_symbol_metadata(module_path)
+            logger.debug(f"  {len(module_metadata)} 個のシンボルメタデータを収集しました")
+            imported_metadata.update(module_metadata)
+        elif node.module and node.module not in external_packages and node.module.split('.')[
+            0] not in external_packages:
             logger.debug(
-                f"module_path_calc 呼び出し: module={node.module}, level={node.level}, current_path={current_path}")
+                f"  モジュール {node.module} のパスを解決できませんでした。external_packagesリストに追加を検討してください。")
 
-            # 外部パッケージならスキップ
-            if node.module in external_packages or node.module.split('.')[0] in external_packages:
-                logger.debug(f"  外部パッケージをスキップ: {node.module}")
-                return None
-
-            if node.level == 0:  # 絶対インポート
-                logger.debug(f"  絶対インポートの処理: {node.module}")
-
-                # プロジェクトルートとsrcディレクトリを探す
-                project_root, src_dir = find_project_root(base_dir)
-                logger.debug(f"  プロジェクトルート: {project_root}")
-                logger.debug(f"  src ディレクトリ: {src_dir}")
-
-                # 同じパッケージ内のインポートか確認
-                if is_same_package_import(node.module, current_path):
-                    logger.debug(f"  同一パッケージ内のインポートと判断: {node.module}")
-
-                    # パッケージ名を含まないシンプルなモジュール名を取得
-                    module_parts = node.module.split('.')
-                    simple_module_name = module_parts[-1]
-
-                    # 同じディレクトリ内のモジュールとして検索
-                    simple_path = current_path.parent / f"{simple_module_name}.py"
-                    logger.debug(f"  同一ディレクトリ内のモジュールを確認: {simple_path}")
-                    if simple_path.exists():
-                        logger.debug(f"  同一ディレクトリ内にモジュールが見つかりました: {simple_path}")
-                        return simple_path
-
-                # モジュールパスの構築試行
-                # 可能性のあるすべてのベースディレクトリのリスト
-                base_dirs = []
-
-                # 1. 現在のディレクトリ
-                base_dirs.append(base_dir)
-
-                # 2. srcディレクトリが見つかった場合
-                if src_dir:
-                    base_dirs.append(src_dir)
-
-                # 3. プロジェクトルートディレクトリ
-                if project_root != base_dir:
-                    base_dirs.append(project_root)
-
-                logger.debug(f"  検索対象のベースディレクトリ: {base_dirs}")
-
-                # 各ディレクトリでパスを試す
-                for directory in base_dirs:
-                    # 直接の.pyファイル
-                    mod_path = directory / Path(node.module.replace('.', '/') + '.py')
-                    logger.debug(f"  試行 - {directory} からのパス: {mod_path}")
-                    if mod_path.exists():
-                        logger.debug(f"  成功: ファイルが存在します: {mod_path}")
-                        return mod_path
-
-                    # __init__.pyファイル
-                    init_path = directory / Path(node.module.replace('.', '/')) / "__init__.py"
-                    logger.debug(f"  試行 - {directory} からの__init__パス: {init_path}")
-                    if init_path.exists():
-                        logger.debug(f"  成功: __init__.pyファイルが存在します: {init_path}")
-                        return init_path
-
-                # より単純なアプローチでsrcディレクトリ内のパスを試行
-                if src_dir:
-                    # モジュール名の最後の部分だけを使用
-                    module_parts = node.module.split('.')
-                    simple_name = module_parts[-1]
-
-                    # プロジェクトのsrcディレクトリを再帰的に検索
-                    logger.debug(f"  src内をモジュール{simple_name}で再帰的に検索")
-
-                    found_paths = []
-                    for path in src_dir.glob(f"**/{simple_name}.py"):
-                        found_paths.append(path)
-
-                    if found_paths:
-                        logger.debug(f"  見つかったパス: {found_paths}")
-                        # 最も近いと思われるパスを返す（仮の実装）
-                        logger.debug(f"  最も近いと思われるパスを使用: {found_paths[0]}")
-                        return found_paths[0]
-
-                logger.debug(f"  絶対インポートのパス解決に失敗: {node.module}")
-                return None
-            else:  # 相対インポート
-                logger.debug(f"  相対インポートの処理: level={node.level}, module={node.module}")
-
-                # 現在のファイルの親ディレクトリから開始
-                relative_path = current_path.parent
-                logger.debug(f"  開始ディレクトリ: {relative_path}")
-
-                # レベルに合わせて上に移動
-                original_level = node.level
-                for i in range(node.level - 1):
-                    prev_path = relative_path
-                    relative_path = relative_path.parent
-                    logger.debug(f"  レベル {i + 1}/{original_level - 1}: {prev_path} -> {relative_path}")
-
-                # モジュールが指定されている場合は追加
-                final_path = relative_path
-                if node.module:
-                    module_parts = node.module.split('.')
-                    for i, part in enumerate(module_parts):
-                        prev_path = final_path
-                        final_path = final_path / part
-                        logger.debug(f"  モジュール部分 {i + 1}/{len(module_parts)}を追加: {prev_path} -> {final_path}")
-
-                # モジュールファイルが存在するか確認
-                module_file = final_path.with_suffix('.py')
-                logger.debug(f"  モジュールファイルをチェック: {module_file}")
-                if module_file.exists():
-                    logger.debug(f"  モジュールファイルが存在します")
-                    return module_file
-
-                # パッケージの場合は__init__.pyを確認
-                init_file = final_path / '__init__.py'
-                logger.debug(f"  __init__.pyファイルをチェック: {init_file}")
-                if init_file.exists():
-                    logger.debug(f"  __init__.pyファイルが存在します")
-                    return init_file
-
-                logger.debug(f"  相対インポートのパス解決に失敗: level={node.level}, module={node.module}")
-                return None
-
-        # インポート文を収集
-        import_nodes = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                import_nodes.append(node)
-
-        # インポート情報のログ出力
-        logger.debug(f"ファイル {src_path} から {len(import_nodes)} 個のインポート文を検出")
-        for i, node in enumerate(import_nodes):
-            logger.debug(
-                f"インポート #{i + 1}: from {node.module} import {[name.name for name in node.names]} (level={node.level})")
-
-        # 実際の処理
-        for i, node in enumerate(import_nodes):
-            logger.debug(f"インポート #{i + 1} を処理中: {node.module} (level={node.level})")
-            module_path = module_path_calc(node, src_path)
-
-            if module_path and module_path.exists():
-                logger.debug(f"  モジュールパスが見つかりました: {module_path}")
-                logger.debug(f"  シンボルメタデータを収集中...")
-                module_metadata = await a_collect_symbol_metadata(module_path)
-                logger.debug(f"  {len(module_metadata)} 個のシンボルメタデータを収集しました")
-                imported_metadata.update(module_metadata)
-            elif node.module and node.module not in external_packages and node.module.split('.')[
-                0] not in external_packages:
-                logger.debug(
-                    f"  モジュール {node.module} のパスを解決できませんでした。external_packagesリストに追加を検討してください。")
-
-        logger.debug(f"合計 {len(imported_metadata)} 個のインポートされたシンボルメタデータを収集しました")
-        return imported_metadata
+    logger.debug(f"合計 {len(imported_metadata)} 個のインポートされたシンボルメタデータを収集しました")
+    return imported_metadata
 
 
 @dataclass(frozen=True)

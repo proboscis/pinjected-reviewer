@@ -6,12 +6,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Awaitable, List, Optional, Tuple, Dict
 
-import loguru
-from injected_utils import lzma_sqlite, async_cached
 from loguru import logger
 from pinjected import *
 from pinjected_openai.openrouter.instances import StructuredLLM
-from pinjected_openai.openrouter.util import a_openrouter_chat_completion, a_openrouter_chat_completion__without_fix
 from pydantic import BaseModel
 from tqdm import tqdm
 
@@ -196,6 +193,12 @@ Even tiny violation like missing prefix in naming conventions are not allowed.
 However, missing space or adding space can be ignored if it is not a violation of the guide.
 Beware @injcted functions must not be directly called unless it is trying to make IProxy object.
 @injected function must be requested as a dependency in @instance/@injected function to have dependency resolved.
+Note the following:
+- if not used, instance, injected, design, and other decorators does not need to be imported.
+- Commenting out is not part of the review.
+- White spaces are not part of the review.
+- Anything not relevant to pinjected is not part of the review.
+
 ```diff
 {diff.diff}
 ```
