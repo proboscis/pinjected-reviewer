@@ -15,6 +15,8 @@ from pinjected_openai.openrouter.util import a_openrouter_chat_completion, a_ope
 from pydantic import BaseModel
 from tqdm import tqdm
 
+from pinjected_reviewer.utils import check_if_file_should_be_ignored
+
 # a_openrouter_chat_completion()
 
 GatherGitDiff = Callable[[], Awaitable[str]]
@@ -168,6 +170,22 @@ async def a_review_python_diff(
         diff: FileDiff
 ):
     assert diff.filename.name.endswith('.py'), "Not a Python file"
+    
+    # Extract file content from diff to check for ignore comments
+    # This is a simple approach to handle the common case where an ignore comment exists in the file
+    # It won't catch all cases (like if the ignore comment is removed in the diff)
+    # But it's sufficient for most use cases
+    file_content = diff.diff
+    
+    # Check if file should be ignored using our robust function
+    if check_if_file_should_be_ignored(file_content, diff.filename):
+        logger.info(f"Ignoring file {diff.filename} due to pinjected-reviewer ignore/skip comment")
+        return Review(
+            name=f"Pinjected Coding Style for {diff.filename}", 
+            review_text=f"File contains a pinjected-reviewer ignore/skip comment. Skipping review.",
+            approved=True
+        )
+    
     prompt = f"""
 Read the following guide to understand how to use Pinjected in your code:
 {pinjected_guide_md}

@@ -6,7 +6,10 @@ from pathlib import Path
 from injected_utils import async_cached, lzma_sqlite
 from pinjected import design, instance, injected, Injected
 
-__version__ = "0.1.0"
+__version__ = "0.3.1"
+
+# This allows utils to be imported properly from the package
+from pinjected_reviewer.utils import check_if_file_should_be_ignored
 
 
 @instance
@@ -53,7 +56,7 @@ def __pinjected_reviewer_default_design():
         ),
         a_sllm_for_code_review=injected('a_sllm_for_commit_review'),
         logger=logger,
-        pinjected_guid_md=pinjected_guide_md
+        pinjected_guide_md=pinjected_guide_md
     )
 
 
