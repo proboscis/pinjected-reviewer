@@ -154,18 +154,23 @@ The answer must be true if it is approved and false if it is not approved.
     return await a_sllm_for_approval_extraction(prompt, response_format=Approved)
 
 
+@instance
+async def pinjected_guide_md():
+    return load_review_material('how_to_use_pinjected.md')
+
+
 @injected
 async def a_review_python_diff(
         a_sllm_for_commit_review: StructuredLLM,
         a_extract_approved: Callable[[str], Awaitable[Approved]],
+        pinjected_guide_md: str,
         /,
         diff: FileDiff
 ):
     assert diff.filename.name.endswith('.py'), "Not a Python file"
-    guide = load_review_material('how_to_use_pinjected.md')
     prompt = f"""
 Read the following guide to understand how to use Pinjected in your code:
-{guide}
+{pinjected_guide_md}
 Now, please review the following Python code changes.
 The review must point out any violations of the guide, with clear reasons with examples.
 If any violations are found, you must not approve the changes.
@@ -422,7 +427,7 @@ test_review: IProxy = review_diff__pinjected_code_style
 
 
 @injected
-async def a_git_diff(a_system) -> str:
+async def a_git_diff(a_system, /) -> str:
     """
     Gathers the current git diff for staged files.
     
@@ -444,43 +449,8 @@ async def a_git_diff(a_system) -> str:
     return stdout
 
 
-@instance
-async def cache_root_path():
-    path = Path("~/.cache/pinjected_reviewer").expanduser()
-    path.mkdir(exist_ok=True, parents=True)
-    return path
-
-
 __meta_design__ = design(
     overrides=design(
-        a_sllm_for_commit_review=async_cached(
-            lzma_sqlite(injected('cache_root_path') / 'a_sllm_for_commit_review.sqlite'))(
-            Injected.partial(
-                a_openrouter_chat_completion,
-                model="anthropic/claude-3.7-sonnet:thinking"
-            )
-        ),
-        a_sllm_for_approval_extraction=async_cached(
-            lzma_sqlite(injected('cache_root_path') / 'a_sllm_for_approval_extraction.sqlite'))(
-            Injected.partial(
-                a_openrouter_chat_completion,
-                model="google/gemini-2.0-flash-001",
-            )
-        ),
-        a_structured_llm_for_json_fix=async_cached(
-            lzma_sqlite(injected('cache_root_path') / 'a_structured_llm_for_json_fix.sqlite'))(
-            Injected.partial(
-                a_openrouter_chat_completion__without_fix,
-                model="openai/gpt-4o-mini"
-            )
-        ),
-        a_llm_for_json_schema_example=async_cached(
-            lzma_sqlite(injected('cache_root_path') / 'a_llm_for_json_schema_example.sqlite'))(
-            Injected.partial(
-                a_openrouter_chat_completion__without_fix,
-                model="openai/gpt-4o",
-            )
-        ),
-        logger=loguru.logger
+
     )
 )

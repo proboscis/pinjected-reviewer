@@ -1,6 +1,6 @@
 # Pinjected Reviewer
 
-[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](https://github.com/proboscis/pinjected-reviewer)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/proboscis/pinjected-reviewer)
 
 A git pre-commit hook that validates code against pinjected coding style guidelines.
 
@@ -83,6 +83,33 @@ rye run python -m pinjected_reviewer install
 rye run python -m pinjected_reviewer uninstall
 ```
 
+### Integration with Pytest
+
+The package comes with a pytest plugin that automatically checks your code for pinjected compliance when running tests:
+
+```bash
+# Run tests with pinjected-reviewer (enabled by default)
+pytest
+
+# Disable pinjected-reviewer
+pytest --no-pinjected-reviewer
+
+# Run tests even if pinjected-reviewer finds errors
+pytest --pinjected-continue-on-error
+```
+
+The plugin provides several options:
+
+- The plugin is automatically enabled when the package is installed
+- Use `--no-pinjected-reviewer` to disable the code review
+- Use `--pinjected-continue-on-error` to run tests even if code review finds errors
+
+When enabled, the plugin:
+1. Scans your project's Python files for pinjected usage issues
+2. Reports all issues in the terminal summary after tests complete
+3. Fails the test run if error-level issues are found (unless overridden)
+4. Color-codes issues by severity (errors in red, warnings in yellow, etc.)
+
 ## How it Works
 
 The reviewer checks all staged Python files for pinjected coding style compliance, including:
@@ -96,6 +123,13 @@ The reviewer checks all staged Python files for pinjected coding style complianc
 If any violations are found, the commit is rejected and detailed feedback is provided to help fix the issues.
 
 ## Changelog
+
+### 0.3.0 (2025-03-11)
+- Added pytest plugin integration for code review during tests
+- Option to enable/disable plugin with `--no-pinjected-reviewer`
+- Option to continue tests despite errors with `--pinjected-continue-on-error`
+- Improved project file detection, filtering out libraries and virtual environments
+- Comprehensive color-coded reporting in test output
 
 ### 0.2.1 (2025-03-11)
 - Minor code cleanup

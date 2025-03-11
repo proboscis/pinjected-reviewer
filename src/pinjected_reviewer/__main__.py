@@ -1,5 +1,5 @@
 """
-Main CLI module for pinjected-reviewer (v0.2.1).
+Main CLI module for pinjected-reviewer (v0.3.0).
 
 This module provides command-line functionality for the pinjected-reviewer package:
 - review: Run the code review process on staged git changes

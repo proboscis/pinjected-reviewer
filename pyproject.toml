@@ -1,6 +1,6 @@
 [project]
 name = "pinjected-reviewer"
-version = "0.2.1"
+version = "0.3.0"
 description = "A git pre-commit hook that validates code against pinjected coding style guidelines"
 authors = [
     { name = "proboscis", email = "nameissoap@gmail.com" }
@@ -17,6 +17,9 @@ requires-python = ">= 3.12"
 
 [project.scripts]
 pinjected-reviewer = "pinjected_reviewer.__main__:main"
+
+[project.entry-points.pytest11]
+pinjected_reviewer = "pinjected_reviewer.pytest_reviewer.coding_rule_plugin"
 
 [build-system]
 requires = ["hatchling"]
