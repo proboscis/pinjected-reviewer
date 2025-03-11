@@ -198,6 +198,8 @@ Note the following:
 - Commenting out is not part of the review.
 - White spaces are not part of the review.
 - Anything not relevant to pinjected is not part of the review.
+- discourage instances(), providers(), classes() use for making Design object, since they are deprecated. Suggest using design() instead.
+- if you find bind_provider() call, it is deprecated and violation
 
 ```diff
 {diff.diff}
