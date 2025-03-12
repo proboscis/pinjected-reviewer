@@ -393,11 +393,11 @@ Pinjectedプロジェクトでは、以下のテスト構造が推奨されて�
 # <repo_root>/tests/test_example.py
 from pinjected.test import injected_pytest
 @injected_pytest()
-def test_some_function(some_function):
+async def test_some_function(some_function):
     # some_functionは依存性注入によって提供される
     return some_function("test_input")
 ```
-
+`async def`と`def`の両方に対応しており、pytest.mark.asyncioを使用する必要がありません。使用しないで下さい。
 ### 7.2 依存関係の命名規則
 
 依存関係の命名には、衝突を避けるために以下のようなパターンが推奨されます：
@@ -433,7 +433,7 @@ def test_some_function(some_dependency):
 test_design = design(
     some_dependency=MockDependency()
 )
-
+# test_designを使うように指定
 @injected_pytest(test_design)
 def test_with_override(some_dependency):
     # some_dependencyはtest_designで指定されたMockDependencyが注入される
