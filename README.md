@@ -1,6 +1,6 @@
 # Pinjected Reviewer
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/proboscis/pinjected-reviewer)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/proboscis/pinjected-reviewer)
 
 A git pre-commit hook that validates code against pinjected coding style guidelines.
 
@@ -123,6 +123,12 @@ The reviewer checks all staged Python files for pinjected coding style complianc
 If any violations are found, the commit is rejected and detailed feedback is provided to help fix the issues.
 
 ## Changelog
+
+### 0.4.0 (2025-03-13)
+- Added comprehensive CLAUDE.md file with code style guidelines and commands
+- Fixed Python version compatibility to ">= 3.10" (was 3.12)
+- Updated documentation with correct pinjected import statements
+- Improved developer experience with detailed style guides
 
 ### 0.3.0 (2025-03-11)
 - Added pytest plugin integration for code review during tests

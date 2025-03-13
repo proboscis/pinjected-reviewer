@@ -1,6 +1,6 @@
 [project]
 name = "pinjected-reviewer"
-version = "0.3.2"
+version = "0.4.0"
 description = "A git pre-commit hook that validates code against pinjected coding style guidelines"
 authors = [
     { name = "proboscis", email = "nameissoap@gmail.com" }
@@ -13,7 +13,7 @@ dependencies = [
     "injected-utils>=0.1.32",
 ]
 readme = "README.md"
-requires-python = ">= 3.12"
+requires-python = ">= 3.10"
 
 [project.scripts]
 pinjected-reviewer = "pinjected_reviewer.__main__:main"
