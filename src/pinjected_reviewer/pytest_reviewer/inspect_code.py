@@ -28,6 +28,7 @@ class SymbolMetadata:
     is_injected: bool
     is_instance: bool
     is_class: bool
+    is_injected_pytest:bool
     module: str
 
 
@@ -54,6 +55,7 @@ async def a_collect_symbol_metadata(
             symbol_info = SymbolMetadata(
                 is_injected=False,
                 is_instance=False,
+                is_injected_pytest=False,
                 is_class=isinstance(node, ast.ClassDef),
                 module=module_name
             )
@@ -64,6 +66,12 @@ async def a_collect_symbol_metadata(
                             symbol_info.is_injected = True
                         elif dec.id == "instance":
                             symbol_info.is_instance = True
+                        elif dec.id == "injected_pytest":
+                            symbol_info.is_injected_pytest = True
+                    elif isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name):
+                        # Handle decorator calls like @injected_pytest()
+                        if dec.func.id == "injected_pytest":
+                            symbol_info.is_injected_pytest = True
             metadata[f"{module_name}.{symbol_name}"] = symbol_info
     return metadata
 
@@ -360,6 +368,9 @@ async def _find_misues(function_returns, get_symbol_info, tree):
             elif function_meta.is_injected:
                 args = {arg.arg for arg in node.args.posonlyargs}
                 # logger.warning(f"args for injected function; {args}")
+            elif function_meta.is_injected_pytest:
+                args = {arg.arg for arg in node.args.args}
+                # logger.warning(f"args for injected_pytest function; {args}")
             else:
                 # the function is not decorated, so we can't really know what it's doing
                 # logger.warning(f"using empty args for node:{node.name}")
@@ -449,6 +460,7 @@ async def _find_misues(function_returns, get_symbol_info, tree):
                                 logger.warning(f"checking if {accessed_name} is in {wrong_args_set}")
                                 if accessed_name in wrong_args_set:
                                     misuse_type = 'dependency in non_pos_only argument (Dependencies should be placed before `/`. No `/` means the args are not injected.)'
+                            # okay somehow the `args` is set()
                             misuse.append(Misuse(
                                 user_function=node.name,
                                 used_proxy=qualified_name,
@@ -479,6 +491,9 @@ import pinjected_reviewer.entrypoint
 
 test_detect_misuse: IProxy = a_detect_misuse_of_pinjected_proxies(
     Path(pinjected_reviewer.entrypoint.__file__)
+)
+test_not_detect_imports:IProxy = a_detect_misuse_of_pinjected_proxies(
+    Path(pinjected_reviewer.__file__).parent.parent/'__package_for_tests__'/'misusing_module.py'
 )
 
 
