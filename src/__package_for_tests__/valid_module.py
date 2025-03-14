@@ -12,6 +12,7 @@ def test(some_configuration):
 @injected_pytest()
 def test_nested(some_configuration):
     def impl():
+        # this gives a false positive.
         return some_configuration
 
     return impl()

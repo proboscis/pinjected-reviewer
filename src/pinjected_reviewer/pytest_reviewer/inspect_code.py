@@ -13,7 +13,7 @@ from pinjected import injected, IProxy, Injected, instance
 def suppress_logs():
     """Context manager to temporarily suppress logging."""
     # Save current logger level
-    #handler_ids = logger.configure(handlers=[{"sink": lambda _: None, "level": "ERROR"}])
+    # handler_ids = logger.configure(handlers=[{"sink": lambda _: None, "level": "ERROR"}])
     try:
         yield
     finally:
@@ -28,7 +28,7 @@ class SymbolMetadata:
     is_injected: bool
     is_instance: bool
     is_class: bool
-    is_injected_pytest:bool
+    is_injected_pytest: bool
     module: str
 
 
@@ -302,6 +302,68 @@ class Misuse:
     src_node: ast.AST = None
 
 
+@dataclass
+class SymbolMetadataGetter:
+    symbol_metadata: dict
+    imported_symbol_metadata: dict
+    tree: ast.AST
+    src_path: Path
+
+    def __post_init__(self):
+        self.all_metadata = {**self.symbol_metadata, **self.imported_symbol_metadata}
+        # 各関数定義と返り値の型アノテーションを記録する辞書
+        function_returns = {}
+        # 最初に全関数の返り値型を収集
+        for node in ast.walk(self.tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                returns_iproxy = False
+                # IProxy型の返り値かどうかをチェック
+                if node.returns:
+                    if isinstance(node.returns, ast.Name) and node.returns.id == "IProxy":
+                        returns_iproxy = True
+                    elif isinstance(node.returns, ast.Subscript) and getattr(node.returns.value, "id", "") == "IProxy":
+                        returns_iproxy = True
+
+                function_returns[node.name] = returns_iproxy
+        self.function_returns = function_returns
+
+    # シンボル情報を取得する関数
+    def get_symbol_info(self, name):
+        module_name = self.src_path.stem
+        qualified_name = f"{module_name}.{name}"
+        symbol_info = self.all_metadata.get(qualified_name)
+
+        if not symbol_info:
+            symbol_info = self.all_metadata.get(name)
+
+            if not symbol_info:
+                for full_name, info in self.all_metadata.items():
+                    if full_name.endswith(f".{name}"):
+                        return info, full_name
+
+        return symbol_info, qualified_name if symbol_info else None
+
+
+@injected
+async def a_symbol_metadata_getter(
+        a_collect_symbol_metadata: callable,
+        a_collect_imported_symbol_metadata: callable,
+        a_ast: callable,
+        /,
+        src_path: Path
+):
+    local_metadata = await a_collect_symbol_metadata(src_path)
+    imported_metadata = await a_collect_imported_symbol_metadata(src_path)
+    tree = await a_ast(src_path.read_text())
+
+    return SymbolMetadataGetter(
+        symbol_metadata=local_metadata,
+        imported_symbol_metadata=imported_metadata,
+        tree=tree,
+        src_path=src_path
+    )
+
+
 @injected
 async def a_detect_misuse_of_pinjected_proxies(
         a_collect_symbol_metadata: callable,
@@ -353,9 +415,22 @@ async def a_detect_misuse_of_pinjected_proxies(
         return list(sorted(misuse, key=lambda x: x.line_number))
 
 
+class MisuseDetector(ast.NodeVisitor):
+    def __init__(self, symbol_table):
+        self.symbol_table = symbol_table
+
+    def visit_Name(self, node):
+        """
+        As we visit a name we need to check if it's a direct IProxy or not.
+        TO tell that, we can use symtable.
+        :param node:
+        :return:
+        """
+
+
 async def _find_misues(function_returns, get_symbol_info, tree):
     misuse = []
-    
+
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             # this args change depending on if it's @injected or @instance.
@@ -379,7 +454,7 @@ async def _find_misues(function_returns, get_symbol_info, tree):
 
             # 現在の関数がIProxyを返す型かどうか
             returns_iproxy = function_returns.get(node.name, False)
-            
+
             # Find any inner function definitions and map their scope
             inner_functions = {}
             for inner_node in ast.walk(node):
@@ -392,23 +467,24 @@ async def _find_misues(function_returns, get_symbol_info, tree):
                     inner_functions[inner_node.name]['args'].update(arg.arg for arg in inner_node.args.args)
                     inner_functions[inner_node.name]['args'].update(arg.arg for arg in inner_node.args.posonlyargs)
                     inner_functions[inner_node.name]['args'].update(arg.arg for arg in inner_node.args.kwonlyargs)
-            
+
             # 関数内での呼び出しを追跡
             for subnode in ast.walk(node):
                 # If this is an inner function, skip checking it directly (we'll process it separately)
                 if isinstance(subnode, (ast.FunctionDef, ast.AsyncFunctionDef)) and subnode is not node:
                     continue
-                
+
                 # 処理しないケース
                 if isinstance(subnode, ast.Name) and (subnode.id == node.name or subnode.id in args):
                     continue
-                
+
                 # Check if this name reference is inside an inner function
                 in_inner_function = False
                 for inner_name, inner_data in inner_functions.items():
                     inner_node = inner_data['node']
                     # Check if subnode is within the inner function's body
-                    if hasattr(subnode, 'lineno') and hasattr(inner_node, 'lineno') and hasattr(inner_node, 'end_lineno'):
+                    if hasattr(subnode, 'lineno') and hasattr(inner_node, 'lineno') and hasattr(inner_node,
+                                                                                                'end_lineno'):
                         if inner_node.lineno <= subnode.lineno <= inner_node.end_lineno:
                             in_inner_function = True
                             # If the variable is used in inner function but injected in outer function,
@@ -448,7 +524,7 @@ async def _find_misues(function_returns, get_symbol_info, tree):
                         # If the variable is already properly injected in the outer function,
                         # it's not a misuse when accessed in inner functions
                         continue
-                        
+
                     symbol_info, qualified_name = get_symbol_info(accessed_name)
 
                     if symbol_info and (symbol_info.is_injected or symbol_info.is_instance):
@@ -492,9 +568,11 @@ import pinjected_reviewer.entrypoint
 test_detect_misuse: IProxy = a_detect_misuse_of_pinjected_proxies(
     Path(pinjected_reviewer.entrypoint.__file__)
 )
-test_not_detect_imports:IProxy = a_detect_misuse_of_pinjected_proxies(
-    Path(pinjected_reviewer.__file__).parent.parent/'__package_for_tests__'/'valid_module.py'
+test_not_detect_imports: IProxy = a_detect_misuse_of_pinjected_proxies(
+    Path(pinjected_reviewer.__file__).parent.parent / '__package_for_tests__' / 'valid_module.py'
 )
+
+
 # please run this test by
 # `rye run python -m pinjected run pinjected_reviewer.pytest_reviewer.inspect_code.test_not_detect_imports`
 
