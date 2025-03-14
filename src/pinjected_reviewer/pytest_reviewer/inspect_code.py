@@ -493,8 +493,10 @@ test_detect_misuse: IProxy = a_detect_misuse_of_pinjected_proxies(
     Path(pinjected_reviewer.entrypoint.__file__)
 )
 test_not_detect_imports:IProxy = a_detect_misuse_of_pinjected_proxies(
-    Path(pinjected_reviewer.__file__).parent.parent/'__package_for_tests__'/'misusing_module.py'
+    Path(pinjected_reviewer.__file__).parent.parent/'__package_for_tests__'/'valid_module.py'
 )
+# please run this test by
+# `rye run python -m pinjected run pinjected_reviewer.pytest_reviewer.inspect_code.test_not_detect_imports`
 
 
 class DetectMisuseOfPinjectedProxies(Protocol):
