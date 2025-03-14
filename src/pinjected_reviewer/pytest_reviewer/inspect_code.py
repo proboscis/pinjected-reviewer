@@ -1,8 +1,9 @@
 import ast
 import contextlib
+import symtable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Dict, Optional, Protocol
+from typing import List, Dict, Optional, Protocol, Union
 
 from injected_utils import async_cached
 from loguru import logger
@@ -30,6 +31,10 @@ class SymbolMetadata:
     is_class: bool
     is_injected_pytest: bool
     module: str
+
+    @property
+    def is_iproxy(self):
+        return self.is_injected or self.is_instance
 
 
 @async_cached(Injected.dict())
@@ -304,8 +309,8 @@ class Misuse:
 
 @dataclass
 class SymbolMetadataGetter:
-    symbol_metadata: dict
-    imported_symbol_metadata: dict
+    symbol_metadata: dict[str, SymbolMetadata]
+    imported_symbol_metadata: dict[str, SymbolMetadata]
     tree: ast.AST
     src_path: Path
 
@@ -327,8 +332,11 @@ class SymbolMetadataGetter:
                 function_returns[node.name] = returns_iproxy
         self.function_returns = function_returns
 
+    def func_returns_iproxy(self, func_name: str) -> bool:
+        return self.function_returns.get(func_name, False)
+
     # シンボル情報を取得する関数
-    def get_symbol_info(self, name):
+    def get_symbol_info(self, name) -> tuple[Optional[SymbolMetadata], Optional[str]]:
         module_name = self.src_path.stem
         qualified_name = f"{module_name}.{name}"
         symbol_info = self.all_metadata.get(qualified_name)
@@ -366,76 +374,108 @@ async def a_symbol_metadata_getter(
 
 @injected
 async def a_detect_misuse_of_pinjected_proxies(
-        a_collect_symbol_metadata: callable,
-        a_collect_imported_symbol_metadata: callable,
-        a_ast: callable,
+        a_symbol_metadata_getter: callable,
+        a_ast,
         /,
         src_path: Path
 ) -> List[Misuse]:
     with logger.contextualize(tag="a_detect_misuse"):
-        local_metadata = await a_collect_symbol_metadata(src_path)
-        imported_metadata = await a_collect_imported_symbol_metadata(src_path)
-        all_metadata = {**local_metadata, **imported_metadata}
-
-        tree = await a_ast(src_path.read_text())
-        module_name = src_path.stem
-
-        # 各関数定義と返り値の型アノテーションを記録する辞書
-        function_returns = {}
-
-        # シンボル情報を取得する関数
-        def get_symbol_info(name):
-            qualified_name = f"{module_name}.{name}"
-            symbol_info = all_metadata.get(qualified_name)
-
-            if not symbol_info:
-                symbol_info = all_metadata.get(name)
-
-                if not symbol_info:
-                    for full_name, info in all_metadata.items():
-                        if full_name.endswith(f".{name}"):
-                            return info, full_name
-
-            return symbol_info, qualified_name if symbol_info else None
-
-        # 最初に全関数の返り値型を収集
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                returns_iproxy = False
-                # IProxy型の返り値かどうかをチェック
-                if node.returns:
-                    if isinstance(node.returns, ast.Name) and node.returns.id == "IProxy":
-                        returns_iproxy = True
-                    elif isinstance(node.returns, ast.Subscript) and getattr(node.returns.value, "id", "") == "IProxy":
-                        returns_iproxy = True
-
-                function_returns[node.name] = returns_iproxy
-
-        misuse = await _find_misues(function_returns, get_symbol_info, tree)
+        detector = MisuseDetector(await a_symbol_metadata_getter(src_path))
+        # metadata_getter = await a_symbol_metadata_getter(src_path)
+        # misuse = await _find_misues(metadata_getter)
+        detector.visit(await a_ast(src_path.read_text()))
+        misuse = detector.misuses
         return list(sorted(misuse, key=lambda x: x.line_number))
 
 
+@dataclass
+class FuncStack:
+    node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    injection_keys: set[str]
+
+
 class MisuseDetector(ast.NodeVisitor):
-    def __init__(self, symbol_table):
-        self.symbol_table = symbol_table
+    def __init__(self, symbol_metadata_getter):
+        self.symbol_metadata_getter:SymbolMetadataGetter = symbol_metadata_getter
+        self.injection_stack: list[FuncStack] = []
+        self.misuses = []
+
+    def _get_injection_keys(self, node):
+        assert isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        for dec in node.decorator_list:
+            if isinstance(dec, ast.Name):
+                if dec.id == "injected":
+                    return {arg.arg for arg in node.args.posonlyargs}
+                if dec.id == "instance":
+                    return {arg.arg for arg in node.args.args}
+            elif isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name):
+                if dec.func.id == "injected_pytest":
+                    return {arg.arg for arg in node.args.args}
+        return {}
+
+    def is_key_injected(self, key):
+        for stack in self.injection_stack:
+            if key in stack.injection_keys:
+                return True
+        return False
+
+    def _push_function(self, node):
+        self.injection_stack.append(FuncStack(node=node, injection_keys=self._get_injection_keys(node)))
+
+    def _pop_function(self):
+        self.injection_stack.pop()
+
+    def visit_FunctionDef(self, node):
+        self._push_function(node)
+        self.generic_visit(node)
+        self._pop_function()
+
+    def visit_AsyncFunctionDef(self, node):
+        self._push_function(node)
+        self.generic_visit(node)
+        self._pop_function()
+
+    def _outermost_function(self):
+        if not self.injection_stack:
+            return None
+        return self.injection_stack[-1]
+
+    def _innermost_function(self):
+        if not self.injection_stack:
+            return None
+        return self.injection_stack[0]
 
     def visit_Name(self, node):
         """
-        As we visit a name we need to check if it's a direct IProxy or not.
-        TO tell that, we can use symtable.
+        Now we can check if a key is actually injected, or not.
         :param node:
         :return:
         """
+        info, name = self.symbol_metadata_getter.get_symbol_info(node.id)
+        info: SymbolMetadata
+        if info and info.is_iproxy and not self.is_key_injected(node.id):
+            if innermost := self._innermost_function():
+                if not self.symbol_metadata_getter.func_returns_iproxy(innermost.node.name):
+                    if outermost := self._outermost_function():
+                        self.misuses.append(Misuse(
+                            user_function=outermost.node.name,
+                            used_proxy=node.id,
+                            line_number=node.lineno,
+                            misuse_type="Direct access to IProxy detected. You must request the dependency, by placing it in the function arguments.",
+                            src_node=node
+                        ))
+        self.generic_visit(node)
 
 
-async def _find_misues(function_returns, get_symbol_info, tree):
+def _find_misues(metadata_getter: SymbolMetadataGetter):
     misuse = []
+    tree = metadata_getter.tree
 
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             # this args change depending on if it's @injected or @instance.
             # logger.info(f"loop start for {node.name}")
-            function_meta, _ = get_symbol_info(node.name)
+            function_meta, _ = metadata_getter.get_symbol_info(node.name)
             if function_meta.is_instance:
                 # logger.warning(f"instance function detected: {node.name}")
                 args = {arg.arg for arg in node.args.args}
@@ -453,7 +493,7 @@ async def _find_misues(function_returns, get_symbol_info, tree):
             # logger.info(f"args for {node.name}: {args}")
 
             # 現在の関数がIProxyを返す型かどうか
-            returns_iproxy = function_returns.get(node.name, False)
+            returns_iproxy = metadata_getter.function_returns.get(node.name, False)
 
             # Find any inner function definitions and map their scope
             inner_functions = {}
@@ -525,7 +565,7 @@ async def _find_misues(function_returns, get_symbol_info, tree):
                         # it's not a misuse when accessed in inner functions
                         continue
 
-                    symbol_info, qualified_name = get_symbol_info(accessed_name)
+                    symbol_info, qualified_name = metadata_getter.get_symbol_info(accessed_name)
 
                     if symbol_info and (symbol_info.is_injected or symbol_info.is_instance):
                         if accessed_name not in args and not returns_iproxy:
@@ -565,12 +605,21 @@ test_detect_misuse: IProxy = a_detect_misuse_of_pinjected_proxies(
 )
 import pinjected_reviewer.entrypoint
 
-test_detect_misuse: IProxy = a_detect_misuse_of_pinjected_proxies(
+test_detect_misuse_2: IProxy = a_detect_misuse_of_pinjected_proxies(
     Path(pinjected_reviewer.entrypoint.__file__)
 )
 test_not_detect_imports: IProxy = a_detect_misuse_of_pinjected_proxies(
     Path(pinjected_reviewer.__file__).parent.parent / '__package_for_tests__' / 'valid_module.py'
 )
+
+
+@injected
+async def a_symtable(src_path: Path):
+    tbl = symtable.symtable((src_path.read_text()), src_path.name, 'exec')
+    return tbl
+
+
+check_symtable: IProxy = a_symtable(Path(pinjected_reviewer.examples.__file__)).get_identifiers()
 
 
 # please run this test by

@@ -21,9 +21,11 @@ async def cache_root_path():
 
 @instance
 def __pinjected_reviewer_default_design():
+    # pinjected-reviewer: ignore
     from pinjected_reviewer.entrypoint import pinjected_guide_md
     from pinjected_openai.openrouter.util import a_openrouter_chat_completion
     from pinjected_openai.openrouter.util import a_openrouter_chat_completion__without_fix
+    from pinjected_reviewer.pytest_reviewer.inspect_code import a_symbol_metadata_getter
     from loguru import logger
     return design(
         a_sllm_for_commit_review=async_cached(
@@ -56,7 +58,8 @@ def __pinjected_reviewer_default_design():
         ),
         a_sllm_for_code_review=injected('a_sllm_for_commit_review'),
         logger=logger,
-        pinjected_guide_md=pinjected_guide_md
+        pinjected_guide_md=pinjected_guide_md,
+        a_symbol_metadata_getter=a_symbol_metadata_getter
     )
 
 

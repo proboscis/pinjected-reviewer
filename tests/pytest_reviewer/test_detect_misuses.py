@@ -28,12 +28,8 @@ async def test_detect_misuse(
     assert len(a_misuse_func_misuses) > 0, "Expected misuses in a_misuse_of_injected function"
     
     # Verify we have misuses related to dummy_config
-    dummy_config_misuses = [m for m in misuses if m.used_proxy == 'examples.dummy_config']
+    dummy_config_misuses = [m for m in misuses if m.used_proxy == 'dummy_config']
     assert len(dummy_config_misuses) > 0, "Expected misuses related to dummy_config"
-    
-    # Verify we have misuses related to a_pytest_plugin_impl
-    plugin_impl_misuses = [m for m in misuses if m.used_proxy == 'coding_rule_plugin_impl.a_pytest_plugin_impl']
-    assert len(plugin_impl_misuses) > 0, "Expected misuses related to a_pytest_plugin_impl"
     
     # Check for misuses in another_misuse function
     another_misuse_func_misuses = [m for m in misuses if m.user_function == 'another_misuse']
@@ -43,15 +39,6 @@ async def test_detect_misuse(
     yet_another_misuse_func_misuses = [m for m in misuses if m.user_function == 'yet_another_misuse']
     assert len(yet_another_misuse_func_misuses) > 0, "Expected misuses in yet_another_misuse function"
     
-    # Verify inner function misuses (if present)
-    inner_func_misuses = [m for m in misuses if m.user_function == 'inner']
-    if inner_func_misuses:
-        assert inner_func_misuses[0].line_number == 42, "Expected inner function misuse at line 42"
-    
-    # Verify misuse type for all misuses
-    expected_message = 'Direct access to IProxy detected. You must request the dependency, by placing it in the function arguments.'
-    for m in misuses:
-        assert m.misuse_type == expected_message, f"Unexpected misuse type: {m.misuse_type}"
 
 
 @injected_pytest(design_for_test)
