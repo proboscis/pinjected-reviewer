@@ -61,7 +61,7 @@ async def changed_python_files_in_project(
         git_info: GitInfo instance with repository information
         
     Returns:
-        A list of changed Python file paths
+        A list of changed Python file paths (excluding deleted files)
     """
     root = Path(pytest_session.config.rootpath)
     logger.info(f"pinjected_reviewer: rootpath for changed files: {root}")
@@ -69,8 +69,19 @@ async def changed_python_files_in_project(
     # Get all Python files that have changes using git_info
     all_changed_files = []
 
-    # Add staged Python files
-    all_changed_files.extend([f for f in git_info.staged_files if f.name.endswith('.py')])
+    # Add staged Python files (filter out deleted files)
+    staged_py_files = []
+    for f in git_info.staged_files:
+        if f.name.endswith('.py'):
+            # Check if file is deleted
+            is_deleted = False
+            if f in git_info.file_diffs:
+                is_deleted = git_info.file_diffs[f].is_deleted
+            
+            if not is_deleted:
+                staged_py_files.append(f)
+    
+    all_changed_files.extend(staged_py_files)
 
     # Add modified (unstaged) Python files
     all_changed_files.extend([f for f in git_info.modified_files if f.name.endswith('.py')])
@@ -85,12 +96,19 @@ async def changed_python_files_in_project(
     project_files = [root / file_path if not file_path.is_absolute() else file_path for file_path in all_changed_files]
 
     # Filter out files from Python libraries and virtual environments
+    # Also filter out files that don't exist (e.g., deleted files)
     filtered_files = []
     for file_path in project_files:
         parts = file_path.parts
         # Skip files in virtual environments or site-packages
         if any(part in ['venv', '.venv', 'site-packages', '.tox', 'dist', 'build', '__pycache__'] for part in parts):
             continue
+        
+        # Skip files that don't exist on disk
+        if not file_path.exists():
+            logger.warning(f"pinjected_reviewer: skipping non-existent file {file_path}")
+            continue
+            
         filtered_files.append(file_path)
 
     logger.info(f"pinjected_reviewer: found {len(filtered_files)} changed Python files")
@@ -188,13 +206,29 @@ async def a_detect_injected_function_call_without_requesting(
     if not in the function arguments, look for the definitions
     if it is annotated with @injected, then it is a wrong usage.
     """
+    # Check if file exists
+    if not src_path.exists():
+        logger.warning(f"pinjected_reviewer: file {src_path} does not exist, skipping review")
+        return []
+        
+    try:
+        # Try to read the file content
+        content = src_path.read_text()
+    except Exception as e:
+        logger.error(f"pinjected_reviewer: failed to read file {src_path}: {e}")
+        return []
+        
     # Check if file should be ignored
-    content = src_path.read_text()
     should_ignore = check_if_file_should_be_ignored(content, src_path)
     if should_ignore:
         return []
 
-    misuses = await a_detect_misuse_of_pinjected_proxies(src_path)
+    try:
+        misuses = await a_detect_misuse_of_pinjected_proxies(src_path)
+    except Exception as e:
+        logger.error(f"pinjected_reviewer: failed to detect misuses in {src_path}: {e}")
+        return []
+        
     results = []
     guide = pinjected_guide_md
     # now we need to build a context to ask llm for fix:
@@ -204,26 +238,28 @@ async def a_detect_injected_function_call_without_requesting(
         return []
     df = df.groupby(['user_function', 'line_number']).first()
     context = ""
-    whole_src = src_path.read_text().splitlines()
-    # add line no
-    whole_src = [f"{i + 1:4d}: {line}" for i, line in enumerate(whole_src)]
-    for user_function, group in df.groupby('user_function'):
-        start = group.iloc[0].start
-        end = group.iloc[0].end
-        func_src = "\n".join(whole_src[start - 3:end])
-        context += f"""
+    
+    try:
+        whole_src = content.splitlines()
+        # add line no
+        whole_src = [f"{i + 1:4d}: {line}" for i, line in enumerate(whole_src)]
+        for user_function, group in df.groupby('user_function'):
+            start = group.iloc[0].start
+            end = group.iloc[0].end
+            func_src = "\n".join(whole_src[start - 3:end])
+            context += f"""
 # We found a misuse of pinjected proxy objects in the function `{user_function}`.
 line {start} to {end}:
 Source:
 {func_src}
 """
-        for i, m in group.reset_index().iterrows():
-            context += f"""
+            for i, m in group.reset_index().iterrows():
+                context += f"""
 ## Mistake in line {m.line_number}: {m.misuse_type}, {m.used_proxy.split('.')[-1]}
 """
-    logger.debug(f"context: {context}")
+        logger.debug(f"context: {context}")
 
-    prompt = f"""
+        prompt = f"""
 Read the following guide for how to use pinjected.
 {guide}
 
@@ -234,13 +270,16 @@ Please provide a detailed guide to explain how the code should be fixed, for eac
 Please only provide the correct use of @injected and @instance, rather than hacking anyway to make the code work.
 IProxy objects can be used to construct a tree of IProxy, but the user should be aware of the usage.
 """
-    resp: str = await a_sllm_for_code_review(prompt)
-    return [Diagnostic(
-        name='Misuse of pinjected proxies',
-        level='warning',
-        message=resp,
-        file=src_path
-    )]
+        resp: str = await a_sllm_for_code_review(prompt)
+        return [Diagnostic(
+            name='Misuse of pinjected proxies',
+            level='warning',
+            message=resp,
+            file=src_path
+        )]
+    except Exception as e:
+        logger.error(f"pinjected_reviewer: failed to process misuses in {src_path}: {e}")
+        return []
 
 
 import pinjected_reviewer
