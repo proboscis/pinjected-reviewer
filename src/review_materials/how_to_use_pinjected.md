@@ -117,6 +117,12 @@ __meta_design__ = design(
 )
 ```
 
+```python
+# 何もoverrideしない場合
+__meta_design__ = design()
+```
+
+
 ## 3. 実行方法とCLIオプション
 
 ### 3.1 基本的な実行方法
@@ -1224,6 +1230,12 @@ def run_something(dep1, dep2, /, arg1, arg2):
 このように定義した関数をpinjected runで実行すると、実行結果は値ではなく「関数オブジェクト」になる。これは`@injected`が「関数を抽象化するIProxy」を返すため。
 
 @injectedは主に、依存性を注入した上で追加の引数を受け取るような「部分適用関数」を定義する場合に適している。
+
+# Deprecations
+- `instances`,`providers`,`classes`を用いたDesignの作成はdeprecated. 代わりに`design`関数を使用する。
+- `@injected_function`はdeprecated, 代わりに`@injected`を使用する。
+
+
 
 ## エントリポイントの命名規則
 
