@@ -173,6 +173,12 @@ async def a_review_python_diff(
     # It won't catch all cases (like if the ignore comment is removed in the diff)
     # But it's sufficient for most use cases
     file_content = diff.diff
+    if diff.is_deleted:
+        return Review(
+            name=f"Pinjected Coding Style for {diff.filename}",
+            review_text=f"File {diff.filename} is deleted. Skipping review.",
+            approved=True
+        )
     
     # Check if file should be ignored using our robust function
     if check_if_file_should_be_ignored(file_content, diff.filename):
@@ -182,6 +188,7 @@ async def a_review_python_diff(
             review_text=f"File contains a pinjected-reviewer ignore/skip comment. Skipping review.",
             approved=True
         )
+
     
     prompt = f"""
 Read the following guide to understand how to use Pinjected in your code:
