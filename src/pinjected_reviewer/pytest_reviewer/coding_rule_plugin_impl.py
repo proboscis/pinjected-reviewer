@@ -47,9 +47,9 @@ async def python_files_in_project(logger, pytest_session: pytest.Session) -> lis
 
 @instance
 async def changed_python_files_in_project(
-    logger, 
-    pytest_session: pytest.Session,
-    git_info,
+        logger,
+        pytest_session: pytest.Session,
+        git_info,
 ) -> list[Path]:
     """
     Gets only the changed Python files in the git repository (staged, unstaged, and untracked).
@@ -61,16 +61,27 @@ async def changed_python_files_in_project(
         git_info: GitInfo instance with repository information
         
     Returns:
-        A list of changed Python file paths
+        A list of changed Python file paths (excluding deleted files)
     """
     root = Path(pytest_session.config.rootpath)
     logger.info(f"pinjected_reviewer: rootpath for changed files: {root}")
-    
+
     # Get all Python files that have changes using git_info
     all_changed_files = []
 
-    # Add staged Python files
-    all_changed_files.extend([f for f in git_info.staged_files if f.name.endswith('.py')])
+    # Add staged Python files (filter out deleted files)
+    staged_py_files = []
+    for f in git_info.staged_files:
+        if f.name.endswith('.py'):
+            # Check if file is deleted
+            is_deleted = False
+            if f in git_info.file_diffs:
+                is_deleted = git_info.file_diffs[f].is_deleted
+
+            if not is_deleted:
+                staged_py_files.append(f)
+
+    all_changed_files.extend(staged_py_files)
 
     # Add modified (unstaged) Python files
     all_changed_files.extend([f for f in git_info.modified_files if f.name.endswith('.py')])
@@ -85,18 +96,23 @@ async def changed_python_files_in_project(
     project_files = [root / file_path if not file_path.is_absolute() else file_path for file_path in all_changed_files]
 
     # Filter out files from Python libraries and virtual environments
+    # Also filter out files that don't exist (e.g., deleted files)
     filtered_files = []
     for file_path in project_files:
         parts = file_path.parts
         # Skip files in virtual environments or site-packages
         if any(part in ['venv', '.venv', 'site-packages', '.tox', 'dist', 'build', '__pycache__'] for part in parts):
             continue
+
+        # Skip files that don't exist on disk
+        if not file_path.exists():
+            logger.warning(f"pinjected_reviewer: skipping non-existent file {file_path}")
+            continue
+
         filtered_files.append(file_path)
 
     logger.info(f"pinjected_reviewer: found {len(filtered_files)} changed Python files")
     return filtered_files
-        
-
 
 class FileDiagnosisProvider(Protocol):
     async def __call__(self, src_path: Path) -> list[Diagnostic]:
