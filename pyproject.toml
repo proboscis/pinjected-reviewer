@@ -6,7 +6,7 @@ authors = [
     { name = "proboscis", email = "nameissoap@gmail.com" }
 ]
 dependencies = [
-    "pinjected>=0.2.241",
+    "pinjected @ git+https://github.com/proboscis/pinjected",
     "pinjected-openai>=0.4.34",
     "tqdm>=4.67.1",
     "loguru>=0.7.3",
