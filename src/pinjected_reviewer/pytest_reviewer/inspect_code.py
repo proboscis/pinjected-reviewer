@@ -407,10 +407,10 @@ class MisuseDetector(ast.NodeVisitor):
                 if dec.id == "injected":
                     return {arg.arg for arg in node.args.posonlyargs}
                 if dec.id == "instance":
-                    return {arg.arg for arg in node.args.args}
+                    return {arg.arg for arg in node.args.args} | {arg.arg for arg in node.args.posonlyargs} | {arg.arg for arg in node.args.kwonlyargs}
             elif isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name):
                 if dec.func.id == "injected_pytest":
-                    return {arg.arg for arg in node.args.args}
+                    return {arg.arg for arg in node.args.args} | {arg.arg for arg in node.args.kwonlyargs} | {arg.arg for arg in node.args.posonlyargs}
         return {}
 
     def is_key_injected(self, key):
@@ -491,6 +491,10 @@ test_detect_misuse_2: IProxy = a_detect_misuse_of_pinjected_proxies(
 )
 test_not_detect_imports: IProxy = a_detect_misuse_of_pinjected_proxies(
     Path(pinjected_reviewer.__file__).parent.parent / '__package_for_tests__' / 'valid_module.py'
+)
+
+test_detect_misuse_3:IProxy = a_detect_misuse_of_pinjected_proxies(
+    Path("~/repos/proboscis-ema/src/ema_cython/artemis/label_feature_creation_design.py").expanduser()
 )
 
 
